@@ -1,0 +1,25 @@
+/resources/public/js/compiled/**
+figwheel_server.log
+pom.xml
+*jar
+/lib/
+/classes/
+/out/
+/target/
+.lein-deps-sum
+.lein-repl-history
+.lein-plugins/
+.repl
+.nrepl-port
+
+# ------------------------------------------
+# For Cursive
+# ------------------------------------------
+# User-specific stuff
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+# Cursive Clojure plugin
+.idea/replstate.xml
