@@ -1,5 +1,6 @@
 (ns todomvc-rum.core
-  (:require [rum.core :as rum]))
+  (:require [clojure.string :as str]
+            [rum.core :as rum]))
 
 (enable-console-print!)
 
@@ -13,13 +14,56 @@
 
 (def initial-db
   {:input-text ""
-   :todo-list []})
+   :todo-list []
+   :disp-status :all
+   :editing-index nil})
 
 (def db (atom initial-db))
 
 (def input-text (rum/cursor-in db [:input-text]))
 
 (def todo-list (rum/cursor-in db [:todo-list]))
+
+(def disp-status (rum/cursor-in db [:disp-status]))
+
+(def editing-index (rum/cursor-in db [:editing-index]))
+
+;; DB operation
+
+(defn- add-new-task [text]
+  (swap! todo-list conj {:text text :status :active}))
+
+(defn- remove-task [index]
+  (->> @todo-list
+       (keep-indexed (fn [i m]
+                       (when-not (= i index)
+                         m)))
+       vec
+       (reset! todo-list)))
+
+(defn- change-task-status [index checked?]
+  (swap! todo-list assoc-in [index :status] (if checked? :completed :active)))
+
+(defn- toggle-all [checked?]
+  (let [status (if checked? :completed :active)]
+    (->> @todo-list
+         (mapv #(assoc % :status status))
+         (reset! todo-list))))
+
+(defn- clear-completed []
+  (->> @todo-list
+       (remove #(= (:status %) :completed))
+       vec
+       (reset! todo-list)))
+
+(defn- start-edit [index]
+  (reset! editing-index index))
+
+(defn- end-edit []
+  (reset! editing-index nil))
+
+(defn- update-task-text [index text]
+  (swap! todo-list assoc-in [index :text] text))
 
 ;; Compoent
 
@@ -35,28 +79,66 @@
                        :on-change (fn [e] (reset! input-text (.. e -target -value)))
                        :on-key-down (fn [e] (when (and (= (.-keyCode e) enter-key-code)
                                                       (seq @input-text))
-                                             (swap! todo-list conj @input-text)
+                                             (add-new-task @input-text)
                                              (reset! input-text "")))}]]
     [:section.main
-     [:input#toggle-all.toggle-all {:type :checkbox}]
+     [:input#toggle-all.toggle-all {:type :checkbox
+                                    :on-change (fn [e] (toggle-all (.. e -target -checked)))}]
      [:label {:for "toggle-all"}]
      [:ul.todo-list
-      (map-indexed (fn [i s]
-                     [:li {:key i}
-                      [:input.toggle {:type :checkbox}]
-                      [:label s]
-                      [:button.destroy]])
-                   @todo-list)]
-     #_[:input.edit {:type :text}]]
+      (loop [i 0
+             [{:as m :keys [text status]} :as coll] (rum/react todo-list)
+             ret []]
+        (if-not m
+          ret
+          (if (or (= (rum/react disp-status) :all)
+                  (= (rum/react disp-status) status))
+            (recur (inc i)
+                   (rest coll)
+                   (conj ret [:li
+                              {:key (str "task-" i)
+                               :class (str/join " " (remove nil? [(when (= status :completed) "completed")
+                                                                  (when (= (rum/react editing-index) i) "editing")]))}
+                              [:div.view
+                               [:input.toggle {:type :checkbox
+                                               :checked (= status :completed)
+                                               :on-change (fn [e] (change-task-status i (.. e -target -checked)))}]
+                               [:label {:on-double-click (fn [_] (start-edit i))}
+                                text]
+                               [:button.destroy {:on-click (fn [_] (remove-task i))}]]
+                              [:input.edit {:type :text
+                                            :value text
+                                            :focus (str (= (rum/react editing-index) i))
+                                            :on-change (fn [e] (update-task-text i (.. e -target -value)))
+                                            :on-key-down (fn [e] (when (= (.-keyCode e) enter-key-code)
+                                                                  (end-edit)
+                                                                  (when (empty? text)
+                                                                    (remove-task i))))
+                                            :on-blur (fn [_] (end-edit))}]]))
+            (recur (inc i)
+                   (rest coll)
+                   ret))))]]
     (when (seq @todo-list)
       [:footer.footer
        [:span.todo-count
-        [:strong (count @todo-list)]
+        [:strong (->> (rum/react todo-list)
+                      (filter #(= (:status %) :active))
+                      count)]
         [:span " item left"]]
        [:ul.filters
-        [:li [:a.selected {:href "#/"} "ALL"]]
-        [:li [:a {:href "#/active"} "Active"]]
-        [:li [:a {:href "#/completed"} "Completed"]]]])]])
+        [:li {:on-click (fn [_] (reset! disp-status :all))}
+         [(if (= (rum/react disp-status) :all) :a.selected :a)
+          {:href "#/"} "ALL"]]
+        [:li {:on-click (fn [_] (reset! disp-status :active))}
+         [(if (= (rum/react disp-status) :active) :a.selected :a)
+          {:href "#/active"} "Active"]]
+        [:li {:on-click (fn [_] (reset! disp-status :completed))}
+         [(if (= (rum/react disp-status) :completed) :a.selected :a)
+          {:href "#/completed"} "Completed"]]]
+       (when (seq (filter #(= (:status %) :completed) (rum/react todo-list)))
+         [:button.clear-completed
+          {:on-click (fn [_] (clear-completed))}
+          "Clear completed"])])]])
 
 (reset! db initial-db)
 (rum/mount (app) app-elm)
