@@ -67,20 +67,76 @@
 
 ;; Compoent
 
+(rum/defc input-task < rum/reactive
+  []
+  [:input.new-todo {:auto-focus true
+                    :placeholder "What needs to be done?"
+                    :value (rum/react input-text)
+                    :on-change (fn [e] (reset! input-text (.. e -target -value)))
+                    :on-key-down (fn [e] (when (and (= (.-keyCode e) enter-key-code)
+                                                   (seq @input-text))
+                                          (add-new-task @input-text)
+                                          (reset! input-text "")))}])
+
+(rum/defc todo-item <
+  rum/reactive
+  {:key-fn (fn [i _ _] (str "task-" i))}
+  [i text status]
+  [:li
+   {:class (str/join " " (remove nil? [(when (= status :completed) "completed")
+                                       (when (= (rum/react editing-index) i) "editing")]))}
+   [:div.view
+    [:input.toggle {:type :checkbox
+                    :checked (= status :completed)
+                    :on-change (fn [e] (change-task-status i (.. e -target -checked)))}]
+    [:label {:on-double-click (fn [_]
+                                (js/console.log "on-double-click")
+                                (start-edit i))}
+     text]
+    [:button.destroy {:on-click (fn [_] (remove-task i))}]]
+   [:input.edit {:type :text
+                 :value text
+                 :focus (str (= (rum/react editing-index) i))
+                 :on-change (fn [e] (update-task-text i (.. e -target -value)))
+                 :on-key-down (fn [e] (when (= (.-keyCode e) enter-key-code)
+                                       (end-edit)
+                                       (when (empty? text)
+                                         (remove-task i))))
+                 :on-blur (fn [_]
+                            (js/console.log "on-blur")
+                            (end-edit))}]])
+
+(rum/defc footer < rum/reactive
+  []
+  (when (seq (rum/react todo-list))
+    [:footer.footer
+     [:span.todo-count
+      [:strong (->> (rum/react todo-list)
+                    (filter #(= (:status %) :active))
+                    count)]
+      [:span " item left"]]
+     [:ul.filters
+      [:li {:on-click (fn [_] (reset! disp-status :all))}
+       [(if (= (rum/react disp-status) :all) :a.selected :a)
+        {:href "#/"} "ALL"]]
+      [:li {:on-click (fn [_] (reset! disp-status :active))}
+       [(if (= (rum/react disp-status) :active) :a.selected :a)
+        {:href "#/active"} "Active"]]
+      [:li {:on-click (fn [_] (reset! disp-status :completed))}
+       [(if (= (rum/react disp-status) :completed) :a.selected :a)
+        {:href "#/completed"} "Completed"]]]
+     (when (seq (filter #(= (:status %) :completed) (rum/react todo-list)))
+       [:button.clear-completed
+        {:on-click (fn [_] (clear-completed))}
+        "Clear completed"])]))
+
 (rum/defc app < rum/reactive
   []
   [:section.todoapp
    [:div
     [:header.header
      [:h1 "todos"]
-     [:input.new-todo {:auto-focus true
-                       :placeholder "What needs to be done?"
-                       :value (rum/react input-text)
-                       :on-change (fn [e] (reset! input-text (.. e -target -value)))
-                       :on-key-down (fn [e] (when (and (= (.-keyCode e) enter-key-code)
-                                                      (seq @input-text))
-                                             (add-new-task @input-text)
-                                             (reset! input-text "")))}]]
+     (input-task)]
     [:section.main
      [:input#toggle-all.toggle-all {:type :checkbox
                                     :on-change (fn [e] (toggle-all (.. e -target -checked)))}]
@@ -95,50 +151,11 @@
                   (= (rum/react disp-status) status))
             (recur (inc i)
                    (rest coll)
-                   (conj ret [:li
-                              {:key (str "task-" i)
-                               :class (str/join " " (remove nil? [(when (= status :completed) "completed")
-                                                                  (when (= (rum/react editing-index) i) "editing")]))}
-                              [:div.view
-                               [:input.toggle {:type :checkbox
-                                               :checked (= status :completed)
-                                               :on-change (fn [e] (change-task-status i (.. e -target -checked)))}]
-                               [:label {:on-double-click (fn [_] (start-edit i))}
-                                text]
-                               [:button.destroy {:on-click (fn [_] (remove-task i))}]]
-                              [:input.edit {:type :text
-                                            :value text
-                                            :focus (str (= (rum/react editing-index) i))
-                                            :on-change (fn [e] (update-task-text i (.. e -target -value)))
-                                            :on-key-down (fn [e] (when (= (.-keyCode e) enter-key-code)
-                                                                  (end-edit)
-                                                                  (when (empty? text)
-                                                                    (remove-task i))))
-                                            :on-blur (fn [_] (end-edit))}]]))
+                   (conj ret (todo-item i text status)))
             (recur (inc i)
                    (rest coll)
                    ret))))]]
-    (when (seq @todo-list)
-      [:footer.footer
-       [:span.todo-count
-        [:strong (->> (rum/react todo-list)
-                      (filter #(= (:status %) :active))
-                      count)]
-        [:span " item left"]]
-       [:ul.filters
-        [:li {:on-click (fn [_] (reset! disp-status :all))}
-         [(if (= (rum/react disp-status) :all) :a.selected :a)
-          {:href "#/"} "ALL"]]
-        [:li {:on-click (fn [_] (reset! disp-status :active))}
-         [(if (= (rum/react disp-status) :active) :a.selected :a)
-          {:href "#/active"} "Active"]]
-        [:li {:on-click (fn [_] (reset! disp-status :completed))}
-         [(if (= (rum/react disp-status) :completed) :a.selected :a)
-          {:href "#/completed"} "Completed"]]]
-       (when (seq (filter #(= (:status %) :completed) (rum/react todo-list)))
-         [:button.clear-completed
-          {:on-click (fn [_] (clear-completed))}
-          "Clear completed"])])]])
+    (footer)]])
 
 (reset! db initial-db)
 (rum/mount (app) app-elm)
