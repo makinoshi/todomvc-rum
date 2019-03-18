@@ -78,33 +78,45 @@
                                           (add-new-task @input-text)
                                           (reset! input-text "")))}])
 
+(def edit-focus-mixin
+  {:did-mount (fn [state]
+                (when-let [dom (rum/dom-node state)]
+                  (.focus dom)
+                  (let [l (.. dom -value -length)]
+                    (.setSelectionRange dom l l))))})
+
+(rum/defc todo-item-edit <
+  rum/reactive
+  edit-focus-mixin
+  [i text]
+  [:input.edit {:type :text
+                :value text
+                :on-change (fn [e] (update-task-text i (.. e -target -value)))
+                :on-key-down (fn [e] (when (= (.-keyCode e) enter-key-code)
+                                      (end-edit)
+                                      (when (empty? text)
+                                        (remove-task i))))
+                :on-blur (fn [_]
+                           (end-edit))}])
+
 (rum/defc todo-item <
   rum/reactive
   {:key-fn (fn [i _ _] (str "task-" i))}
   [i text status]
-  [:li
-   {:class (str/join " " (remove nil? [(when (= status :completed) "completed")
-                                       (when (= (rum/react editing-index) i) "editing")]))}
-   [:div.view
-    [:input.toggle {:type :checkbox
-                    :checked (= status :completed)
-                    :on-change (fn [e] (change-task-status i (.. e -target -checked)))}]
-    [:label {:on-double-click (fn [_]
-                                (js/console.log "on-double-click")
-                                (start-edit i))}
-     text]
-    [:button.destroy {:on-click (fn [_] (remove-task i))}]]
-   [:input.edit {:type :text
-                 :value text
-                 :focus (str (= (rum/react editing-index) i))
-                 :on-change (fn [e] (update-task-text i (.. e -target -value)))
-                 :on-key-down (fn [e] (when (= (.-keyCode e) enter-key-code)
-                                       (end-edit)
-                                       (when (empty? text)
-                                         (remove-task i))))
-                 :on-blur (fn [_]
-                            (js/console.log "on-blur")
-                            (end-edit))}]])
+  (let [edit? (= (rum/react editing-index) i)]
+    [:li
+     {:class (str/join " " (remove nil? [(when (= status :completed) "completed")
+                                         (when edit? "editing")]))}
+     [:div.view
+      [:input.toggle {:type :checkbox
+                      :checked (= status :completed)
+                      :on-change (fn [e] (change-task-status i (.. e -target -checked)))}]
+      [:label {:on-double-click (fn [_]
+                                  (start-edit i))}
+       text]
+      [:button.destroy {:on-click (fn [_] (remove-task i))}]]
+     (when edit?
+       (todo-item-edit i text))]))
 
 (rum/defc footer < rum/reactive
   []
